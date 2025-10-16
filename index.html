@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Battery Management & Checkout System (Scanner Version)</title>
-    <!-- Load Tailwind CSS for modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
@@ -20,7 +19,6 @@
             <p id="system-status" class="text-lg text-gray-600">System Ready. Use USB Barcode Scanner.</p>
         </header>
 
-        <!-- 1. Main Transaction Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
@@ -51,7 +49,6 @@
             </div>
         </div>
         
-        <!-- 2. Add New Battery Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -80,7 +77,6 @@
             </div>
         </div>
 
-        <!-- 3. Battery Status Dashboard -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c1.657 0 3 .895 3 2s-1.343 2-3 2v2m0-4c-1.657 0-3 .895-3 2s1.343 2 3 2m-3 3h6M3 6h18M3 10h18M3 14h18M3 18h18"></path></svg>
@@ -153,6 +149,8 @@
                 if (currentBattery.status === 'checked-out') return showMessage(`Battery is already checked out to ${currentBattery.checkedOutTo}.`, true);
                 currentBattery.status = 'checked-out';
                 currentBattery.checkedOutTo = ctecId;
+                // --- FEATURE 1: Increment checkout count ---
+                currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
             } else if (type === 'checkin') {
                 if (currentBattery.status === 'available') return showMessage(`Battery '${batteryId}' is already available.`, true);
@@ -189,7 +187,9 @@
                 category: newCategory.trim(),
                 status: 'available',
                 checkedOutTo: null,
-                lastTransactionTime: new Date().toISOString()
+                lastTransactionTime: new Date().toISOString(),
+                // --- FEATURE 1: Initialize count for new batteries ---
+                checkoutCount: 0 
             };
 
             saveDataToLocalStorage();
@@ -208,9 +208,9 @@
         // --- System Administration ---
         function seedInitialData() {
             const seedData = {
-                "BATT-001": { category: "Syma X5C Drone", status: "available", checkedOutTo: null },
-                "BATT-002": { category: "Syma X5C Drone", status: "available", checkedOutTo: null },
-                "BATT-003": { category: "GoPro Hero 9", status: "available", checkedOutTo: null },
+                "BATT-001": { category: "Syma X5C Drone", status: "available", checkedOutTo: null, checkoutCount: 0 },
+                "BATT-002": { category: "Syma X5C Drone", status: "available", checkedOutTo: null, checkoutCount: 0 },
+                "BATT-003": { category: "GoPro Hero 9", status: "available", checkedOutTo: null, checkoutCount: 0 },
             };
             let count = 0;
             for (const id in seedData) {
@@ -247,13 +247,24 @@
                 const battery = batteryData[id];
                 const isAvailable = battery.status === 'available';
                 const statusClass = isAvailable ? 'status-available' : 'status-checked-out';
-                const statusText = isAvailable ? 'Available' : `Checked Out: ${battery.checkedOutTo}`;
+                // --- FEATURE 2: Updated status text and added checkout count ---
+                const statusText = isAvailable ? 'Available / Charging' : `Checked Out: ${battery.checkedOutTo}`;
                 const time = new Date(battery.lastTransactionTime).toLocaleString();
+                const checkoutCount = battery.checkoutCount || 0; // Ensures old data doesn't break
+
                 return `
                     <div class="grid grid-cols-3 items-center p-3 border rounded-lg gap-2">
-                        <div><p class="font-bold text-gray-800">${id}</p><p class="text-sm text-gray-500">${battery.category}</p></div>
-                        <div class="text-center"><span class="px-3 py-1 text-xs font-semibold rounded-full ${statusClass}">${statusText}</span></div>
-                        <div class="text-right text-sm text-gray-500">Last Update: ${time}</div>
+                        <div>
+                            <p class="font-bold text-gray-800">${id}</p>
+                            <p class="text-sm text-gray-500">${battery.category}</p>
+                            <p class="text-xs text-gray-400 mt-1">Cycles: ${checkoutCount}</p>
+                        </div>
+                        <div class="text-center">
+                            <span class="px-3 py-1 text-xs font-semibold rounded-full ${statusClass}">${statusText}</span>
+                        </div>
+                        <div class="text-right text-sm text-gray-500">
+                            Last Update: ${time}
+                        </div>
                     </div>`;
             }).join('');
         }
@@ -264,11 +275,8 @@
             updateButtonStates();
             ctecIdInput.focus();
 
-            // --- THIS IS THE "FOCUS GUARDIAN" ---
             const mainContainer = document.getElementById('main-container');
             mainContainer.addEventListener('click', (event) => {
-                // This logic ensures that if you click on the background, the focus
-                // always returns to the correct input box for scanning.
                 const interactiveElements = ['INPUT', 'BUTTON'];
                 if (!interactiveElements.includes(event.target.tagName)) {
                     if (ctecIdInput.value === '') {
