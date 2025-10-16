@@ -10,6 +10,7 @@
         .card { background-color: #ffffff; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); padding: 1.5rem; }
         .status-available { background-color: #d1fae5; color: #065f46; }
         .status-checked-out { background-color: #fee2e2; color: #991b1b; }
+        .status-charging { background-color: #fef9c3; color: #854d0e; }
     </style>
 </head>
 <body class="min-h-screen p-4 sm:p-8">
@@ -92,6 +93,7 @@
         // --- Global App State & Services ---
         let batteryData = {}; 
         const LOCAL_STORAGE_KEY = 'batteryFleetData';
+        const CHARGE_TIME_MS = 15000; // 15 seconds for charging simulation
 
         // --- DOM Element References ---
         const ctecIdInput = document.getElementById('ctecIdInput');
@@ -103,6 +105,11 @@
         function loadDataFromLocalStorage() {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
             batteryData = savedData ? JSON.parse(savedData) : {};
+            Object.keys(batteryData).forEach(id => {
+                if (batteryData[id].status === 'charging') {
+                    resumeChargingTimer(id);
+                }
+            });
             renderBatteries();
         }
 
@@ -118,7 +125,7 @@
             actionMessage.classList.remove('hidden');
             setTimeout(() => { 
                 actionMessage.classList.add('hidden');
-                ctecIdInput.focus(); // After showing a message, always return focus to the first input
+                ctecIdInput.focus();
             }, 3000);
         }
 
@@ -147,16 +154,20 @@
             if (type === 'checkout') {
                 if (!ctecId) return showMessage('Person ID is required for checkout.', true);
                 if (currentBattery.status === 'checked-out') return showMessage(`Battery is already checked out to ${currentBattery.checkedOutTo}.`, true);
+                if (currentBattery.status === 'charging') return showMessage(`Battery '${batteryId}' is still charging.`, true);
+
                 currentBattery.status = 'checked-out';
                 currentBattery.checkedOutTo = ctecId;
-                // --- FEATURE 1: Increment checkout count ---
                 currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
             } else if (type === 'checkin') {
-                if (currentBattery.status === 'available') return showMessage(`Battery '${batteryId}' is already available.`, true);
-                currentBattery.status = 'available';
+                if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
+                
+                currentBattery.status = 'charging';
                 currentBattery.checkedOutTo = null;
-                showMessage(`Successfully checked in '${batteryId}'.`);
+                currentBattery.chargeStartTime = new Date().toISOString();
+                startChargingTimer(batteryId);
+                showMessage(`Battery '${batteryId}' is now charging.`);
             }
             
             currentBattery.lastTransactionTime = new Date().toISOString();
@@ -178,6 +189,41 @@
             handleTransaction(action);
         }
 
+        // --- Charging Logic ---
+        function startChargingTimer(batteryId) {
+            setTimeout(() => {
+                const battery = batteryData[batteryId];
+                if (battery && battery.status === 'charging') {
+                    battery.status = 'available';
+                    battery.chargeStartTime = null;
+                    saveDataToLocalStorage();
+                }
+            }, CHARGE_TIME_MS);
+        }
+
+        function resumeChargingTimer(batteryId) {
+            const battery = batteryData[batteryId];
+            if (!battery || !battery.chargeStartTime) return;
+            const startTime = new Date(battery.chargeStartTime).getTime();
+            const elapsedTime = Date.now() - startTime;
+
+            if (elapsedTime >= CHARGE_TIME_MS) {
+                battery.status = 'available';
+                battery.chargeStartTime = null;
+                saveDataToLocalStorage();
+            } else {
+                const remainingTime = CHARGE_TIME_MS - elapsedTime;
+                setTimeout(() => {
+                    const currentBattery = batteryData[batteryId];
+                    if (currentBattery && currentBattery.status === 'charging') {
+                        currentBattery.status = 'available';
+                        currentBattery.chargeStartTime = null;
+                        saveDataToLocalStorage();
+                    }
+                }, remainingTime);
+            }
+        }
+
         // --- Battery Management ---
         function registerBattery(newId, newCategory) {
             if (!newId || !newCategory) return showMessage('Both Battery ID and Category are required.', true);
@@ -188,10 +234,8 @@
                 status: 'available',
                 checkedOutTo: null,
                 lastTransactionTime: new Date().toISOString(),
-                // --- FEATURE 1: Initialize count for new batteries ---
                 checkoutCount: 0 
             };
-
             saveDataToLocalStorage();
             showMessage(`Successfully registered new battery: '${newId}'.`);
             document.getElementById('newBatteryId').value = '';
@@ -219,17 +263,12 @@
                     count++;
                 }
             }
-            if (count > 0) {
-                saveDataToLocalStorage();
-                showMessage(`Added ${count} sample batteries.`);
-            } else {
-                showMessage("Sample data already exists.", false);
-            }
+            if (count > 0) { saveDataToLocalStorage(); showMessage(`Added ${count} sample batteries.`); }
+            else { showMessage("Sample data already exists.", false); }
         }
         
         function resetSystem() {
-            const isConfirmed = confirm("Are you sure you want to delete ALL battery data?\n\nThis action cannot be undone.");
-            if (isConfirmed) {
+            if (confirm("Are you sure you want to delete ALL battery data?\n\nThis action cannot be undone.")) {
                 batteryData = {};
                 saveDataToLocalStorage();
                 showMessage("System has been reset successfully.");
@@ -245,12 +284,28 @@
             }
             batteryListDiv.innerHTML = batteryIds.map(id => {
                 const battery = batteryData[id];
-                const isAvailable = battery.status === 'available';
-                const statusClass = isAvailable ? 'status-available' : 'status-checked-out';
-                // --- FEATURE 2: Updated status text and added checkout count ---
-                const statusText = isAvailable ? 'Available / Charging' : `Checked Out: ${battery.checkedOutTo}`;
+                let statusClass, statusText;
+
+                switch(battery.status) {
+                    case 'available':
+                        statusClass = 'status-available';
+                        statusText = 'Available';
+                        break;
+                    case 'checked-out':
+                        statusClass = 'status-checked-out';
+                        statusText = `Checked Out: ${battery.checkedOutTo}`;
+                        break;
+                    case 'charging':
+                        statusClass = 'status-charging';
+                        statusText = 'Charging';
+                        break;
+                    default:
+                        statusClass = '';
+                        statusText = 'Unknown';
+                }
+
                 const time = new Date(battery.lastTransactionTime).toLocaleString();
-                const checkoutCount = battery.checkoutCount || 0; // Ensures old data doesn't break
+                const checkoutCount = battery.checkoutCount || 0;
 
                 return `
                     <div class="grid grid-cols-3 items-center p-3 border rounded-lg gap-2">
@@ -279,11 +334,8 @@
             mainContainer.addEventListener('click', (event) => {
                 const interactiveElements = ['INPUT', 'BUTTON'];
                 if (!interactiveElements.includes(event.target.tagName)) {
-                    if (ctecIdInput.value === '') {
-                        ctecIdInput.focus();
-                    } else {
-                        batteryIdInput.focus();
-                    }
+                    if (ctecIdInput.value === '') { ctecIdInput.focus(); } 
+                    else { batteryIdInput.focus(); }
                 }
             });
         }
