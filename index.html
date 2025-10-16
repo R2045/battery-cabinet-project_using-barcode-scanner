@@ -10,7 +10,7 @@
         .card { background-color: #ffffff; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); padding: 1.5rem; }
         .status-available { background-color: #d1fae5; color: #065f46; }
         .status-checked-out { background-color: #fee2e2; color: #991b1b; }
-        .status-charging { background-color: #fef9c3; color: #854d0e; }
+        .status-charging { background-color: #fef9c3; color: #854d0e; } /* Yellow for Charging */
     </style>
 </head>
 <body class="min-h-screen p-4 sm:p-8">
@@ -45,71 +45,47 @@
                 </button>
                 <button onclick="handleTransaction('checkin')" id="checkin-btn"
                         class="flex-1 px-6 py-4 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition duration-150 ease-in-out" disabled>
-                    Check In / Charge
+                    Check In / Update Status
                 </button>
             </div>
         </div>
         
         <div class="card mb-8">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
+             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 New Battery Registration
             </h2>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                <input type="text" id="newBatteryId" placeholder="Scan or Enter New ID..."
-                       class="col-span-1 border border-gray-300 rounded-lg p-3">
-                <input type="text" id="newBatteryCategory" placeholder="Enter Category..."
-                       class="col-span-2 border border-gray-300 rounded-lg p-3">
+                <input type="text" id="newBatteryId" placeholder="Scan or Enter New ID..." class="col-span-1 border border-gray-300 rounded-lg p-3">
+                <input type="text" id="newBatteryCategory" placeholder="Enter Category..." class="col-span-2 border border-gray-300 rounded-lg p-3">
             </div>
-            <button onclick="addNewBattery()" id="add-new-btn" 
-                    class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition duration-150 ease-in-out" disabled>
-                Register New Battery
-            </button>
-            
+            <button onclick="addNewBattery()" id="add-new-btn" class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition" disabled>Register New Battery</button>
             <div class="mt-6 border-t pt-4 space-y-3">
-                 <button id="seed-data-btn" onclick="seedInitialData()" 
-                    class="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition duration-150 ease-in-out text-sm">
-                    Initialize Fleet with Sample Data (If empty)
-                </button>
-                <button id="reset-system-btn" onclick="resetSystem()" 
-                    class="w-full px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-800 transition duration-150 ease-in-out text-sm">
-                    Reset System (Delete All Data)
-                </button>
+                 <button id="seed-data-btn" onclick="seedInitialData()" class="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm">Initialize Fleet with Sample Data</button>
+                <button id="reset-system-btn" onclick="resetSystem()" class="w-full px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-800 transition text-sm">Reset System (Delete All Data)</button>
             </div>
         </div>
-
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c1.657 0 3 .895 3 2s-1.343 2-3 2v2m0-4c-1.657 0-3 .895-3 2s1.343 2 3 2m-3 3h6M3 6h18M3 10h18M3 14h18M3 18h18"></path></svg>
                 Battery Fleet Status
             </h2>
-            <div id="battery-list" class="space-y-3">
-                <p class="text-gray-500">Loading battery data...</p>
-            </div>
+            <div id="battery-list" class="space-y-3"><p class="text-gray-500">Loading battery data...</p></div>
         </div>
     </div>
 
     <script>
-        // --- Global App State & Services ---
         let batteryData = {}; 
         const LOCAL_STORAGE_KEY = 'batteryFleetData';
-        const CHARGE_TIME_MS = 15000; // 15 seconds for charging simulation
 
-        // --- DOM Element References ---
         const ctecIdInput = document.getElementById('ctecIdInput');
         const batteryIdInput = document.getElementById('batteryIdInput');
         const actionMessage = document.getElementById('action-message');
         const batteryListDiv = document.getElementById('battery-list');
         
-        // --- Data Persistence Functions ---
         function loadDataFromLocalStorage() {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
             batteryData = savedData ? JSON.parse(savedData) : {};
-            Object.keys(batteryData).forEach(id => {
-                if (batteryData[id].status === 'charging') {
-                    resumeChargingTimer(id);
-                }
-            });
             renderBatteries();
         }
 
@@ -118,7 +94,6 @@
             renderBatteries();
         }
 
-        // --- UI Helper Functions ---
         function showMessage(message, isError = false) {
             actionMessage.textContent = message;
             actionMessage.className = `text-center p-3 rounded-lg text-sm mb-4 ${isError ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`;
@@ -142,7 +117,6 @@
         document.getElementById('newBatteryId').addEventListener('input', updateButtonStates);
         document.getElementById('newBatteryCategory').addEventListener('input', updateButtonStates);
 
-        // --- Core Transaction Logic ---
         function handleTransaction(type) {
             const ctecId = ctecIdInput.value.trim().toUpperCase();
             const batteryId = batteryIdInput.value.trim().toUpperCase();
@@ -161,13 +135,16 @@
                 currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
             } else if (type === 'checkin') {
-                if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
-                
-                currentBattery.status = 'charging';
-                currentBattery.checkedOutTo = null;
-                currentBattery.chargeStartTime = new Date().toISOString();
-                startChargingTimer(batteryId);
-                showMessage(`Battery '${batteryId}' is now charging.`);
+                if (currentBattery.status === 'checked-out') {
+                    currentBattery.status = 'charging';
+                    currentBattery.checkedOutTo = null;
+                    showMessage(`Battery '${batteryId}' is now charging.`);
+                } else if (currentBattery.status === 'charging') {
+                    currentBattery.status = 'available';
+                    showMessage(`Battery '${batteryId}' is now available.`);
+                } else {
+                    return showMessage(`Battery is already available and cannot be checked in.`, true);
+                }
             }
             
             currentBattery.lastTransactionTime = new Date().toISOString();
@@ -185,46 +162,16 @@
                  batteryIdInput.value = '';
                  return;
             }
-            const action = batteryData[batteryId].status === 'checked-out' ? 'checkin' : 'checkout';
+            const currentStatus = batteryData[batteryId].status;
+            let action;
+            if (currentStatus === 'available') {
+                action = 'checkout';
+            } else { // Covers 'checked-out' and 'charging'
+                action = 'checkin'; 
+            }
             handleTransaction(action);
         }
 
-        // --- Charging Logic ---
-        function startChargingTimer(batteryId) {
-            setTimeout(() => {
-                const battery = batteryData[batteryId];
-                if (battery && battery.status === 'charging') {
-                    battery.status = 'available';
-                    battery.chargeStartTime = null;
-                    saveDataToLocalStorage();
-                }
-            }, CHARGE_TIME_MS);
-        }
-
-        function resumeChargingTimer(batteryId) {
-            const battery = batteryData[batteryId];
-            if (!battery || !battery.chargeStartTime) return;
-            const startTime = new Date(battery.chargeStartTime).getTime();
-            const elapsedTime = Date.now() - startTime;
-
-            if (elapsedTime >= CHARGE_TIME_MS) {
-                battery.status = 'available';
-                battery.chargeStartTime = null;
-                saveDataToLocalStorage();
-            } else {
-                const remainingTime = CHARGE_TIME_MS - elapsedTime;
-                setTimeout(() => {
-                    const currentBattery = batteryData[batteryId];
-                    if (currentBattery && currentBattery.status === 'charging') {
-                        currentBattery.status = 'available';
-                        currentBattery.chargeStartTime = null;
-                        saveDataToLocalStorage();
-                    }
-                }, remainingTime);
-            }
-        }
-
-        // --- Battery Management ---
         function registerBattery(newId, newCategory) {
             if (!newId || !newCategory) return showMessage('Both Battery ID and Category are required.', true);
             if (batteryData[newId]) return showMessage(`A battery with ID '${newId}' already exists.`, true);
@@ -249,12 +196,11 @@
             registerBattery(newId, newCategory);
         }
         
-        // --- System Administration ---
         function seedInitialData() {
             const seedData = {
                 "BATT-001": { category: "Syma X5C Drone", status: "available", checkedOutTo: null, checkoutCount: 0 },
-                "BATT-002": { category: "Syma X5C Drone", status: "available", checkedOutTo: null, checkoutCount: 0 },
-                "BATT-003": { category: "GoPro Hero 9", status: "available", checkedOutTo: null, checkoutCount: 0 },
+                "BATT-002": { category: "GoPro Hero 9", status: "charging", checkedOutTo: null, checkoutCount: 5 },
+                "BATT-003": { category: "Canon LP-E6", status: "available", checkedOutTo: null, checkoutCount: 12 },
             };
             let count = 0;
             for (const id in seedData) {
@@ -275,7 +221,6 @@
             }
         }
         
-        // --- Real-time Data Rendering ---
         function renderBatteries() {
             const batteryIds = Object.keys(batteryData).sort();
             if (batteryIds.length === 0) {
@@ -324,7 +269,6 @@
             }).join('');
         }
 
-        // --- App Initialization ---
         function main() {
             loadDataFromLocalStorage();
             updateButtonStates();
