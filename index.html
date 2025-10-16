@@ -10,7 +10,7 @@
         .card { background-color: #ffffff; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); padding: 1.5rem; }
         .status-available { background-color: #d1fae5; color: #065f46; }
         .status-checked-out { background-color: #fee2e2; color: #991b1b; }
-        .status-charging { background-color: #fef9c3; color: #854d0e; } /* Yellow for Charging */
+        .status-charging { background-color: #fef9c3; color: #854d0e; }
     </style>
 </head>
 <body class="min-h-screen p-4 sm:p-8">
@@ -20,38 +20,30 @@
             <p id="system-status" class="text-lg text-gray-600">System Ready. Use USB Barcode Scanner.</p>
         </header>
 
+        <!-- Main Transaction Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
                 Transaction Interface
             </h2>
-            
             <div id="action-message" class="text-center p-3 rounded-lg text-sm mb-4 hidden"></div>
-
             <label for="ctecIdInput" class="block text-gray-700 font-semibold mb-1">1. Scan Person ID (CTEC ID)</label>
             <input type="text" id="ctecIdInput" placeholder="Scan CTEC ID..."
-                   class="w-full border-2 border-gray-300 focus:border-yellow-500 rounded-lg p-3 mb-4 transition duration-150 ease-in-out"
+                   class="w-full border-2 border-gray-300 focus:border-yellow-500 rounded-lg p-3 mb-4 transition"
                    onkeydown="if(event.key === 'Enter') { document.getElementById('batteryIdInput').focus(); event.preventDefault(); }">
-
             <label for="batteryIdInput" class="block text-gray-700 font-semibold mb-1">2. Scan Battery ID</label>
             <input type="text" id="batteryIdInput" placeholder="Scan Battery ID to complete transaction..."
-                   class="w-full border-2 border-gray-300 focus:border-indigo-500 rounded-lg p-3 mb-4 transition duration-150 ease-in-out"
+                   class="w-full border-2 border-gray-300 focus:border-indigo-500 rounded-lg p-3 mb-4 transition"
                    onkeydown="if(event.key === 'Enter') { handleTransactionBasedOnInput(); }">
-            
             <div class="flex flex-col sm:flex-row gap-4 mt-4">
-                <button onclick="handleTransaction('checkout')" id="checkout-btn"
-                        class="flex-1 px-6 py-4 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-150 ease-in-out" disabled>
-                    Check Out
-                </button>
-                <button onclick="handleTransaction('checkin')" id="checkin-btn"
-                        class="flex-1 px-6 py-4 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition duration-150 ease-in-out" disabled>
-                    Check In / Update Status
-                </button>
+                <button onclick="handleTransaction('checkout')" id="checkout-btn" class="flex-1 px-6 py-4 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition" disabled>Check Out</button>
+                <button onclick="handleTransaction('checkin')" id="checkin-btn" class="flex-1 px-6 py-4 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition" disabled>Check In / Charge</button>
             </div>
         </div>
-        
+
+        <!-- New Battery Registration Card -->
         <div class="card mb-8">
-             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 New Battery Registration
             </h2>
@@ -65,6 +57,8 @@
                 <button id="reset-system-btn" onclick="resetSystem()" class="w-full px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-800 transition text-sm">Reset System (Delete All Data)</button>
             </div>
         </div>
+
+        <!-- Battery Fleet Status Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c1.657 0 3 .895 3 2s-1.343 2-3 2v2m0-4c-1.657 0-3 .895-3 2s1.343 2 3 2m-3 3h6M3 6h18M3 10h18M3 14h18M3 18h18"></path></svg>
@@ -77,6 +71,7 @@
     <script>
         let batteryData = {}; 
         const LOCAL_STORAGE_KEY = 'batteryFleetData';
+        const CHARGE_TIME_MS = 15000; // 15 seconds for charging simulation
 
         const ctecIdInput = document.getElementById('ctecIdInput');
         const batteryIdInput = document.getElementById('batteryIdInput');
@@ -86,6 +81,11 @@
         function loadDataFromLocalStorage() {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
             batteryData = savedData ? JSON.parse(savedData) : {};
+            Object.keys(batteryData).forEach(id => {
+                if (batteryData[id].status === 'charging') {
+                    resumeChargingTimer(id);
+                }
+            });
             renderBatteries();
         }
 
@@ -135,16 +135,13 @@
                 currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
             } else if (type === 'checkin') {
-                if (currentBattery.status === 'checked-out') {
-                    currentBattery.status = 'charging';
-                    currentBattery.checkedOutTo = null;
-                    showMessage(`Battery '${batteryId}' is now charging.`);
-                } else if (currentBattery.status === 'charging') {
-                    currentBattery.status = 'available';
-                    showMessage(`Battery '${batteryId}' is now available.`);
-                } else {
-                    return showMessage(`Battery is already available and cannot be checked in.`, true);
-                }
+                if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
+                
+                currentBattery.status = 'charging';
+                currentBattery.checkedOutTo = null;
+                currentBattery.chargeStartTime = new Date().toISOString();
+                startChargingTimer(batteryId);
+                showMessage(`Battery '${batteryId}' is now charging.`);
             }
             
             currentBattery.lastTransactionTime = new Date().toISOString();
@@ -162,14 +159,42 @@
                  batteryIdInput.value = '';
                  return;
             }
-            const currentStatus = batteryData[batteryId].status;
-            let action;
-            if (currentStatus === 'available') {
-                action = 'checkout';
-            } else { // Covers 'checked-out' and 'charging'
-                action = 'checkin'; 
-            }
+            const action = batteryData[batteryId].status === 'checked-out' ? 'checkin' : 'checkout';
             handleTransaction(action);
+        }
+
+        function startChargingTimer(batteryId) {
+            setTimeout(() => {
+                const battery = batteryData[batteryId];
+                if (battery && battery.status === 'charging') {
+                    battery.status = 'available';
+                    battery.chargeStartTime = null;
+                    saveDataToLocalStorage();
+                }
+            }, CHARGE_TIME_MS);
+        }
+
+        function resumeChargingTimer(batteryId) {
+            const battery = batteryData[batteryId];
+            if (!battery || !battery.chargeStartTime) return;
+            const startTime = new Date(battery.chargeStartTime).getTime();
+            const elapsedTime = Date.now() - startTime;
+
+            if (elapsedTime >= CHARGE_TIME_MS) {
+                battery.status = 'available';
+                battery.chargeStartTime = null;
+                saveDataToLocalStorage();
+            } else {
+                const remainingTime = CHARGE_TIME_MS - elapsedTime;
+                setTimeout(() => {
+                    const currentBattery = batteryData[batteryId];
+                    if (currentBattery && currentBattery.status === 'charging') {
+                        currentBattery.status = 'available';
+                        currentBattery.chargeStartTime = null;
+                        saveDataToLocalStorage();
+                    }
+                }, remainingTime);
+            }
         }
 
         function registerBattery(newId, newCategory) {
@@ -177,11 +202,8 @@
             if (batteryData[newId]) return showMessage(`A battery with ID '${newId}' already exists.`, true);
 
             batteryData[newId] = {
-                category: newCategory.trim(),
-                status: 'available',
-                checkedOutTo: null,
-                lastTransactionTime: new Date().toISOString(),
-                checkoutCount: 0 
+                category: newCategory.trim(), status: 'available', checkedOutTo: null,
+                lastTransactionTime: new Date().toISOString(), checkoutCount: 0 
             };
             saveDataToLocalStorage();
             showMessage(`Successfully registered new battery: '${newId}'.`);
@@ -199,7 +221,7 @@
         function seedInitialData() {
             const seedData = {
                 "BATT-001": { category: "Syma X5C Drone", status: "available", checkedOutTo: null, checkoutCount: 0 },
-                "BATT-002": { category: "GoPro Hero 9", status: "charging", checkedOutTo: null, checkoutCount: 5 },
+                "BATT-002": { category: "GoPro Hero 9", status: "available", checkedOutTo: null, checkoutCount: 5 },
                 "BATT-003": { category: "Canon LP-E6", status: "available", checkedOutTo: null, checkoutCount: 12 },
             };
             let count = 0;
@@ -232,21 +254,10 @@
                 let statusClass, statusText;
 
                 switch(battery.status) {
-                    case 'available':
-                        statusClass = 'status-available';
-                        statusText = 'Available';
-                        break;
-                    case 'checked-out':
-                        statusClass = 'status-checked-out';
-                        statusText = `Checked Out: ${battery.checkedOutTo}`;
-                        break;
-                    case 'charging':
-                        statusClass = 'status-charging';
-                        statusText = 'Charging';
-                        break;
-                    default:
-                        statusClass = '';
-                        statusText = 'Unknown';
+                    case 'available': statusClass = 'status-available'; statusText = 'Available'; break;
+                    case 'checked-out': statusClass = 'status-checked-out'; statusText = `Checked Out: ${battery.checkedOutTo}`; break;
+                    case 'charging': statusClass = 'status-charging'; statusText = 'Charging'; break;
+                    default: statusClass = ''; statusText = 'Unknown';
                 }
 
                 const time = new Date(battery.lastTransactionTime).toLocaleString();
@@ -259,12 +270,8 @@
                             <p class="text-sm text-gray-500">${battery.category}</p>
                             <p class="text-xs text-gray-400 mt-1">Cycles: ${checkoutCount}</p>
                         </div>
-                        <div class="text-center">
-                            <span class="px-3 py-1 text-xs font-semibold rounded-full ${statusClass}">${statusText}</span>
-                        </div>
-                        <div class="text-right text-sm text-gray-500">
-                            Last Update: ${time}
-                        </div>
+                        <div class="text-center"><span class="px-3 py-1 text-xs font-semibold rounded-full ${statusClass}">${statusText}</span></div>
+                        <div class="text-right text-sm text-gray-500">Last Update: ${time}</div>
                     </div>`;
             }).join('');
         }
