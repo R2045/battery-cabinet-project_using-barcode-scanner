@@ -3,62 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Battery Management & Checkout System (Scanner Version)</title>
+    <title>Battery Management & Checkout System (Front Camera)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
         .card { background-color: #ffffff; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); padding: 1.5rem; }
         .status-available { background-color: #d1fae5; color: #065f46; }
         .status-checked-out { background-color: #fee2e2; color: #991b1b; }
         .status-charging { background-color: #fef9c3; color: #854d0e; }
+        #reader { width: 100%; max-width: 400px; margin: 1rem auto; border-radius: 0.5rem; overflow: hidden; }
     </style>
 </head>
 <body class="min-h-screen p-4 sm:p-8">
-    <div class="max-w-4xl mx-auto" id="main-container">
+    <div class="max-w-4xl mx-auto">
         <header class="text-center mb-8">
             <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Battery Checkout System</h1>
-            <p id="system-status" class="text-lg text-gray-600">System Ready. Use USB Barcode Scanner.</p>
+            <p id="system-status" class="text-lg text-gray-600">System Ready. Data is saved locally in your browser.</p>
         </header>
 
         <!-- Main Transaction Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
-                <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2zM15.5 10.5a.5.5 0 11-1 0 .5.5 0 011 0z"></path></svg>
                 Transaction Interface
             </h2>
             <div id="action-message" class="text-center p-3 rounded-lg text-sm mb-4 hidden"></div>
-            <label for="ctecIdInput" class="block text-gray-700 font-semibold mb-1">1. Scan Person ID (CTEC ID)</label>
-            <input type="text" id="ctecIdInput" placeholder="Scan CTEC ID..."
-                   class="w-full border-2 border-gray-300 focus:border-yellow-500 rounded-lg p-3 mb-4 transition"
-                   onkeydown="if(event.key === 'Enter') { document.getElementById('batteryIdInput').focus(); event.preventDefault(); }">
-            <label for="batteryIdInput" class="block text-gray-700 font-semibold mb-1">2. Scan Battery ID</label>
-            <input type="text" id="batteryIdInput" placeholder="Scan Battery ID to complete transaction..."
+            <label for="ctecIdInput" class="block text-gray-700 font-semibold mb-1">1. Enter or Scan Person ID (CTEC ID)</label>
+            <input type="text" id="ctecIdInput" placeholder="Enter CTEC ID..."
+                   class="w-full border-2 border-gray-300 focus:border-yellow-500 rounded-lg p-3 mb-4 transition">
+            <label for="batteryIdInput" class="block text-gray-700 font-semibold mb-1">2. Enter or Scan Battery ID</label>
+            <input type="text" id="batteryIdInput" placeholder="Enter Battery ID..."
                    class="w-full border-2 border-gray-300 focus:border-indigo-500 rounded-lg p-3 mb-4 transition"
                    onkeydown="if(event.key === 'Enter') { handleTransactionBasedOnInput(); }">
+            <div class="flex items-center justify-between mb-4 bg-gray-100 p-3 rounded-lg border">
+                <span class="font-medium text-gray-700">Scan Target: <span id="scanTargetDisplay" class="font-bold text-indigo-600">CTEC ID</span></span>
+                <button onclick="toggleScanTarget()" id="scan-target-toggle-btn" class="px-4 py-2 bg-gray-300 text-gray-800 font-bold rounded-lg hover:bg-gray-400 transition text-sm">Switch Target</button>
+            </div>
+            <button onclick="toggleScanner()" id="scanner-toggle-btn" class="w-full px-6 py-3 mb-4 bg-yellow-500 text-white font-bold rounded-lg hover:bg-yellow-600 transition">Start Camera Scan</button>
+            <div id="reader"></div>
             <div class="flex flex-col sm:flex-row gap-4 mt-4">
-                <button onclick="handleTransaction('checkout')" id="checkout-btn" class="flex-1 px-6 py-4 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition" disabled>Check Out</button>
-                <button onclick="handleTransaction('checkin')" id="checkin-btn" class="flex-1 px-6 py-4 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition" disabled>Check In / Charge</button>
+                <button onclick="handleTransaction('checkout')" id="checkout-btn" class="flex-1 px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition" disabled>Check Out</button>
+                <button onclick="handleTransaction('checkin')" id="checkin-btn" class="flex-1 px-6 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition" disabled>Check In / Charge</button>
             </div>
         </div>
 
-        <!-- New Battery Registration Card -->
+        <!-- Other cards remain the same -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 New Battery Registration
             </h2>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                <input type="text" id="newBatteryId" placeholder="Scan or Enter New ID..." class="col-span-1 border border-gray-300 rounded-lg p-3">
-                <input type="text" id="newBatteryCategory" placeholder="Enter Category..." class="col-span-2 border border-gray-300 rounded-lg p-3">
+                <input type="text" id="newBatteryId" placeholder="New ID..." class="col-span-1 border border-gray-300 rounded-lg p-3">
+                <input type="text" id="newBatteryCategory" placeholder="Category..." class="col-span-2 border border-gray-300 rounded-lg p-3">
             </div>
-            <button onclick="addNewBattery()" id="add-new-btn" class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition" disabled>Register New Battery</button>
-            <div class="mt-6 border-t pt-4 space-y-3">
-                 <button id="seed-data-btn" onclick="seedInitialData()" class="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm">Initialize Fleet with Sample Data</button>
-                <button id="reset-system-btn" onclick="resetSystem()" class="w-full px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-800 transition text-sm">Reset System (Delete All Data)</button>
+            <div class="flex flex-col sm:flex-row gap-4">
+                <button onclick="addNewBattery()" id="add-new-btn" class="flex-1 px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition" disabled>Register Manually</button>
+                <button onclick="scanNewBattery()" id="scan-add-btn" class="flex-1 px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition">Scan to Add New Battery</button>
             </div>
+            <button id="seed-data-btn" onclick="seedInitialData()" class="mt-4 w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm">Initialize Fleet with Sample Data</button>
+            <button id="reset-system-btn" onclick="resetSystem()" class="mt-4 w-full px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-800 transition text-sm">Reset System (Delete All Data)</button>
         </div>
-
-        <!-- Battery Fleet Status Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c1.657 0 3 .895 3 2s-1.343 2-3 2v2m0-4c-1.657 0-3 .895-3 2s1.343 2 3 2m-3 3h6M3 6h18M3 10h18M3 14h18M3 18h18"></path></svg>
@@ -70,13 +76,19 @@
 
     <script>
         let batteryData = {}; 
+        let html5QrCode;
+        let isScannerRunning = false;
+        let scanTarget = 'ctec';
+        let isScanOnCooldown = false;
         const LOCAL_STORAGE_KEY = 'batteryFleetData';
-        const CHARGE_TIME_MS = 15000; // 15 seconds for charging simulation
+        const CHARGE_TIME_MS = 15000;
 
         const ctecIdInput = document.getElementById('ctecIdInput');
         const batteryIdInput = document.getElementById('batteryIdInput');
         const actionMessage = document.getElementById('action-message');
         const batteryListDiv = document.getElementById('battery-list');
+        const scannerToggleBtn = document.getElementById('scanner-toggle-btn');
+        const scanTargetDisplay = document.getElementById('scanTargetDisplay');
         
         function loadDataFromLocalStorage() {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -98,10 +110,7 @@
             actionMessage.textContent = message;
             actionMessage.className = `text-center p-3 rounded-lg text-sm mb-4 ${isError ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`;
             actionMessage.classList.remove('hidden');
-            setTimeout(() => { 
-                actionMessage.classList.add('hidden');
-                ctecIdInput.focus();
-            }, 3000);
+            setTimeout(() => actionMessage.classList.add('hidden'), 4000);
         }
 
         function updateButtonStates() {
@@ -129,14 +138,14 @@
                 if (!ctecId) return showMessage('Person ID is required for checkout.', true);
                 if (currentBattery.status === 'checked-out') return showMessage(`Battery is already checked out to ${currentBattery.checkedOutTo}.`, true);
                 if (currentBattery.status === 'charging') return showMessage(`Battery '${batteryId}' is still charging.`, true);
-
+                
                 currentBattery.status = 'checked-out';
                 currentBattery.checkedOutTo = ctecId;
                 currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
             } else if (type === 'checkin') {
                 if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
-                
+
                 currentBattery.status = 'charging';
                 currentBattery.checkedOutTo = null;
                 currentBattery.chargeStartTime = new Date().toISOString();
@@ -153,12 +162,7 @@
 
         function handleTransactionBasedOnInput() {
             const batteryId = batteryIdInput.value.trim().toUpperCase();
-            if (!batteryId) return;
-            if (!batteryData[batteryId]) {
-                 showMessage(`Battery '${batteryId}' does not exist.`, true);
-                 batteryIdInput.value = '';
-                 return;
-            }
+            if (!batteryId || !batteryData[batteryId]) return;
             const action = batteryData[batteryId].status === 'checked-out' ? 'checkin' : 'checkout';
             handleTransaction(action);
         }
@@ -198,12 +202,11 @@
         }
 
         function registerBattery(newId, newCategory) {
-            if (!newId || !newCategory) return showMessage('Both Battery ID and Category are required.', true);
-            if (batteryData[newId]) return showMessage(`A battery with ID '${newId}' already exists.`, true);
-
+            if (!newId || !newCategory) { showMessage('Both ID and Category are required.', true); return; }
+            if (batteryData[newId]) { showMessage(`A battery with ID '${newId}' already exists.`, true); return; }
             batteryData[newId] = {
                 category: newCategory.trim(), status: 'available', checkedOutTo: null,
-                lastTransactionTime: new Date().toISOString(), checkoutCount: 0 
+                lastTransactionTime: new Date().toISOString(), checkoutCount: 0
             };
             saveDataToLocalStorage();
             showMessage(`Successfully registered new battery: '${newId}'.`);
@@ -218,6 +221,26 @@
             registerBattery(newId, newCategory);
         }
         
+        function onScanNewBatterySuccess(decodedText) {
+            html5QrCode.stop().then(() => {
+                isScannerRunning = false;
+                scannerToggleBtn.textContent = 'Start Camera Scan';
+                scannerToggleBtn.classList.replace('bg-red-500', 'bg-yellow-500');
+                const newId = decodedText.trim().toUpperCase();
+                if (batteryData[newId]) { showMessage(`A battery with ID '${newId}' already exists.`, true); return; }
+                const category = prompt(`Scanned Battery ID: ${newId}\n\nPlease enter the category for this battery:`);
+                if (category && category.trim() !== '') { registerBattery(newId, category); } 
+                else { showMessage('Battery registration cancelled.', true); }
+            }).catch(err => console.error("Error stopping scanner.", err));
+        }
+        
+        function scanNewBattery() {
+            if (isScannerRunning) { toggleScanner(); } 
+            showMessage('Point the camera at a new battery QR code...');
+            html5QrCode.start({ facingMode: "user" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScanNewBatterySuccess, onScanFailure)
+                .catch(err => showMessage('Failed to start camera. Check permissions.', true));
+        }
+
         function seedInitialData() {
             const seedData = {
                 "BATT-001": { category: "Syma X5C Drone", status: "available", checkedOutTo: null, checkoutCount: 0 },
@@ -231,7 +254,7 @@
                     count++;
                 }
             }
-            if (count > 0) { saveDataToLocalStorage(); showMessage(`Added ${count} sample batteries.`); }
+            if (count > 0) { saveDataToLocalStorage(); showMessage(`Added ${count} sample batteries.`); } 
             else { showMessage("Sample data already exists.", false); }
         }
         
@@ -240,6 +263,52 @@
                 batteryData = {};
                 saveDataToLocalStorage();
                 showMessage("System has been reset successfully.");
+            }
+        }
+
+        function onScanSuccess(decodedText) {
+            if (isScanOnCooldown) return;
+            isScanOnCooldown = true;
+            setTimeout(() => { isScanOnCooldown = false; }, 2000);
+
+            if (scanTarget === 'ctec') {
+                ctecIdInput.value = decodedText;
+                toggleScanTarget();
+            } else {
+                batteryIdInput.value = decodedText;
+                if (isScannerRunning) { toggleScanner(); }
+                handleTransactionBasedOnInput();
+                toggleScanTarget(); 
+            }
+            updateButtonStates();
+        }
+
+        function onScanFailure(error) { /* Keep quiet */ }
+
+        function toggleScanTarget() {
+            if (scanTarget === 'ctec') {
+                scanTarget = 'battery';
+                scanTargetDisplay.textContent = 'Battery ID';
+            } else {
+                scanTarget = 'ctec';
+                scanTargetDisplay.textContent = 'CTEC ID';
+            }
+        }
+
+        function toggleScanner() {
+            if (!isScannerRunning) {
+                html5QrCode.start({ facingMode: "user" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScanSuccess, onScanFailure)
+                    .then(() => {
+                        isScannerRunning = true;
+                        scannerToggleBtn.textContent = 'Stop Camera Scan';
+                        scannerToggleBtn.classList.replace('bg-yellow-500', 'bg-red-500');
+                    }).catch(err => showMessage('Failed to start camera.', true));
+            } else {
+                html5QrCode.stop().then(() => {
+                    isScannerRunning = false;
+                    scannerToggleBtn.textContent = 'Start Camera Scan';
+                    scannerToggleBtn.classList.replace('bg-red-500', 'bg-yellow-500');
+                }).catch(err => console.error("Failed to stop scanner", err));
             }
         }
         
@@ -259,7 +328,7 @@
                     case 'charging': statusClass = 'status-charging'; statusText = 'Charging'; break;
                     default: statusClass = ''; statusText = 'Unknown';
                 }
-
+                
                 const time = new Date(battery.lastTransactionTime).toLocaleString();
                 const checkoutCount = battery.checkoutCount || 0;
 
@@ -277,18 +346,9 @@
         }
 
         function main() {
+            html5QrCode = new Html5Qrcode("reader");
             loadDataFromLocalStorage();
             updateButtonStates();
-            ctecIdInput.focus();
-
-            const mainContainer = document.getElementById('main-container');
-            mainContainer.addEventListener('click', (event) => {
-                const interactiveElements = ['INPUT', 'BUTTON'];
-                if (!interactiveElements.includes(event.target.tagName)) {
-                    if (ctecIdInput.value === '') { ctecIdInput.focus(); } 
-                    else { batteryIdInput.focus(); }
-                }
-            });
         }
         
         main();
