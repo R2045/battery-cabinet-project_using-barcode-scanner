@@ -43,13 +43,13 @@
 
         <!-- New Battery Registration Card -->
         <div class="card mb-8">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
+             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 New Battery Registration
             </h2>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                 <input type="text" id="newBatteryId" placeholder="Scan or Enter New ID..." class="col-span-1 border border-gray-300 rounded-lg p-3">
-                <input type="text" id="newBatteryCategory" placeholder="Enter Category..." class="col-span-2 border border-gray-300 rounded-lg p-3">
+                <input type="text" id="newBatteryCategory" placeholder="Enter Category (e.g., DJI Mini 3)" class="col-span-2 border border-gray-300 rounded-lg p-3">
             </div>
             <button onclick="addNewBattery()" id="add-new-btn" class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition" disabled>Register New Battery</button>
             <div class="mt-6 border-t pt-4 space-y-3">
@@ -71,7 +71,15 @@
     <script>
         let batteryData = {}; 
         const LOCAL_STORAGE_KEY = 'batteryFleetData';
-        const CHARGE_TIME_MS = 15000; // 15 seconds for charging simulation
+        
+        // --- Smart Charging Constants ---
+        const SYMA_CHARGE_RATIO = 13.0;  // 13 minutes of charge per 1 minute of flight
+        const DJI_CHARGE_RATIO = 2.0;    // 2 minutes of charge per 1 minute of flight
+        const DEFAULT_CHARGE_RATIO = 1.0;
+        const MIN_CHARGE_TIME_MS = 15000; // Minimum 15 seconds
+        const MAX_CHARGE_TIME_MS = 600000; // Maximum 10 minutes (for demo purposes)
+
+        let uiUpdateInterval = null;
 
         const ctecIdInput = document.getElementById('ctecIdInput');
         const batteryIdInput = document.getElementById('batteryIdInput');
@@ -93,7 +101,7 @@
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(batteryData));
             renderBatteries();
         }
-
+        
         function showMessage(message, isError = false) {
             actionMessage.textContent = message;
             actionMessage.className = `text-center p-3 rounded-lg text-sm mb-4 ${isError ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`;
@@ -127,21 +135,36 @@
 
             if (type === 'checkout') {
                 if (!ctecId) return showMessage('Person ID is required for checkout.', true);
-                if (currentBattery.status === 'checked-out') return showMessage(`Battery is already checked out to ${currentBattery.checkedOutTo}.`, true);
-                if (currentBattery.status === 'charging') return showMessage(`Battery '${batteryId}' is still charging.`, true);
+                if (currentBattery.status !== 'available') return showMessage(`Battery '${batteryId}' is not available.`, true);
 
                 currentBattery.status = 'checked-out';
                 currentBattery.checkedOutTo = ctecId;
                 currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
+                currentBattery.checkoutTime = new Date().toISOString();
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
             } else if (type === 'checkin') {
                 if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
                 
+                const usageMs = Date.now() - new Date(currentBattery.checkoutTime).getTime();
+                
+                let chargeRatio = DEFAULT_CHARGE_RATIO;
+                const categoryLower = currentBattery.category.toLowerCase();
+                if (categoryLower.includes('dji')) {
+                    chargeRatio = DJI_CHARGE_RATIO;
+                } else if (categoryLower.includes('syma')) {
+                    chargeRatio = SYMA_CHARGE_RATIO;
+                }
+
+                let chargeTimeMs = usageMs * chargeRatio;
+                chargeTimeMs = Math.max(MIN_CHARGE_TIME_MS, Math.min(chargeTimeMs, MAX_CHARGE_TIME_MS));
+
                 currentBattery.status = 'charging';
                 currentBattery.checkedOutTo = null;
+                currentBattery.checkoutTime = null;
                 currentBattery.chargeStartTime = new Date().toISOString();
-                startChargingTimer(batteryId);
-                showMessage(`Battery '${batteryId}' is now charging.`);
+                currentBattery.chargeDurationMs = chargeTimeMs;
+                startChargingTimer(batteryId, chargeTimeMs);
+                showMessage(`Battery '${batteryId}' charging for ${Math.round(chargeTimeMs / 1000)}s.`);
             }
             
             currentBattery.lastTransactionTime = new Date().toISOString();
@@ -163,47 +186,46 @@
             handleTransaction(action);
         }
 
-        function startChargingTimer(batteryId) {
+        function startChargingTimer(batteryId, durationMs) {
+            if (!uiUpdateInterval) startUiUpdater();
             setTimeout(() => {
                 const battery = batteryData[batteryId];
                 if (battery && battery.status === 'charging') {
                     battery.status = 'available';
                     battery.chargeStartTime = null;
+                    battery.chargeDurationMs = null;
                     saveDataToLocalStorage();
                 }
-            }, CHARGE_TIME_MS);
+            }, durationMs);
         }
 
         function resumeChargingTimer(batteryId) {
             const battery = batteryData[batteryId];
-            if (!battery || !battery.chargeStartTime) return;
+            if (!battery || !battery.chargeStartTime || !battery.chargeDurationMs) return;
+
             const startTime = new Date(battery.chargeStartTime).getTime();
             const elapsedTime = Date.now() - startTime;
+            const totalDuration = battery.chargeDurationMs;
 
-            if (elapsedTime >= CHARGE_TIME_MS) {
+            if (elapsedTime >= totalDuration) {
                 battery.status = 'available';
                 battery.chargeStartTime = null;
+                battery.chargeDurationMs = null;
                 saveDataToLocalStorage();
             } else {
-                const remainingTime = CHARGE_TIME_MS - elapsedTime;
-                setTimeout(() => {
-                    const currentBattery = batteryData[batteryId];
-                    if (currentBattery && currentBattery.status === 'charging') {
-                        currentBattery.status = 'available';
-                        currentBattery.chargeStartTime = null;
-                        saveDataToLocalStorage();
-                    }
-                }, remainingTime);
+                const remainingTime = totalDuration - elapsedTime;
+                startChargingTimer(batteryId, remainingTime);
             }
         }
 
         function registerBattery(newId, newCategory) {
-            if (!newId || !newCategory) return showMessage('Both Battery ID and Category are required.', true);
+            if (!newId || !newCategory) return showMessage('Both ID and Category are required.', true);
             if (batteryData[newId]) return showMessage(`A battery with ID '${newId}' already exists.`, true);
 
             batteryData[newId] = {
                 category: newCategory.trim(), status: 'available', checkedOutTo: null,
-                lastTransactionTime: new Date().toISOString(), checkoutCount: 0 
+                lastTransactionTime: new Date().toISOString(), checkoutCount: 0,
+                checkoutTime: null, chargeStartTime: null, chargeDurationMs: null
             };
             saveDataToLocalStorage();
             showMessage(`Successfully registered new battery: '${newId}'.`);
@@ -220,9 +242,9 @@
         
         function seedInitialData() {
             const seedData = {
-                "BATT-001": { category: "Syma X5C Drone", status: "available", checkedOutTo: null, checkoutCount: 0 },
-                "BATT-002": { category: "GoPro Hero 9", status: "available", checkedOutTo: null, checkoutCount: 5 },
-                "BATT-003": { category: "Canon LP-E6", status: "available", checkedOutTo: null, checkoutCount: 12 },
+                "BATT-SYMA-01": { category: "Syma X5C Drone", status: "available", checkoutCount: 0 },
+                "BATT-DJI-01": { category: "DJI Mini 3", status: "available", checkoutCount: 5 },
+                "BATT-GOPRO-01": { category: "GoPro Hero 9", status: "available", checkoutCount: 12 },
             };
             let count = 0;
             for (const id in seedData) {
@@ -236,17 +258,31 @@
         }
         
         function resetSystem() {
-            if (confirm("Are you sure you want to delete ALL battery data?\n\nThis action cannot be undone.")) {
+            if (confirm("Are you sure...")) {
                 batteryData = {};
                 saveDataToLocalStorage();
                 showMessage("System has been reset successfully.");
             }
         }
+
+        function startUiUpdater() {
+            if (uiUpdateInterval) return;
+            uiUpdateInterval = setInterval(() => {
+                let anyCharging = Object.values(batteryData).some(b => b.status === 'charging');
+                renderBatteries();
+                if (!anyCharging) stopUiUpdater();
+            }, 1000);
+        }
+
+        function stopUiUpdater() {
+            clearInterval(uiUpdateInterval);
+            uiUpdateInterval = null;
+        }
         
         function renderBatteries() {
             const batteryIds = Object.keys(batteryData).sort();
             if (batteryIds.length === 0) {
-                batteryListDiv.innerHTML = '<p class="text-gray-500">No batteries found. Add some!</p>';
+                batteryListDiv.innerHTML = '<p class="text-gray-500">No batteries found.</p>';
                 return;
             }
             batteryListDiv.innerHTML = batteryIds.map(id => {
@@ -256,7 +292,16 @@
                 switch(battery.status) {
                     case 'available': statusClass = 'status-available'; statusText = 'Available'; break;
                     case 'checked-out': statusClass = 'status-checked-out'; statusText = `Checked Out: ${battery.checkedOutTo}`; break;
-                    case 'charging': statusClass = 'status-charging'; statusText = 'Charging'; break;
+                    case 'charging':
+                        statusClass = 'status-charging';
+                        if (battery.chargeStartTime && battery.chargeDurationMs) {
+                            const endTime = new Date(battery.chargeStartTime).getTime() + battery.chargeDurationMs;
+                            const remainingS = Math.max(0, Math.round((endTime - Date.now()) / 1000));
+                            statusText = `Charging (${remainingS}s left)`;
+                        } else {
+                            statusText = 'Charging';
+                        }
+                        break;
                     default: statusClass = ''; statusText = 'Unknown';
                 }
 
@@ -280,8 +325,6 @@
             loadDataFromLocalStorage();
             updateButtonStates();
             ctecIdInput.focus();
-
-            const mainContainer = document.getElementById('main-container');
             mainContainer.addEventListener('click', (event) => {
                 const interactiveElements = ['INPUT', 'BUTTON'];
                 if (!interactiveElements.includes(event.target.tagName)) {
