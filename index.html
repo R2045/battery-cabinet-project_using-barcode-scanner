@@ -11,6 +11,7 @@
         .status-available { background-color: #d1fae5; color: #065f46; }
         .status-checked-out { background-color: #fee2e2; color: #991b1b; }
         .status-charging { background-color: #fef9c3; color: #854d0e; }
+        .status-faulty { background-color: #4b5563; color: #ffffff; } /* New Faulty Status */
     </style>
 </head>
 <body class="min-h-screen p-4 sm:p-8">
@@ -35,10 +36,14 @@
             <input type="text" id="batteryIdInput" placeholder="Scan Battery ID to complete transaction..."
                    class="w-full border-2 border-gray-300 focus:border-indigo-500 rounded-lg p-3 mb-4 transition"
                    onkeydown="if(event.key === 'Enter') { handleTransactionBasedOnInput(); }">
+            
             <div class="flex flex-col sm:flex-row gap-4 mt-4">
                 <button onclick="handleTransaction('checkout')" id="checkout-btn" class="flex-1 px-6 py-4 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition" disabled>Check Out</button>
                 <button onclick="handleTransaction('checkin')" id="checkin-btn" class="flex-1 px-6 py-4 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition" disabled>Check In / Charge</button>
             </div>
+            
+            <!-- New Fault Button -->
+            <button onclick="toggleFaultStatus()" id="fault-btn" class="w-full mt-4 px-6 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700 transition" disabled>Mark as Faulty</button>
         </div>
 
         <!-- New Battery Registration Card -->
@@ -72,19 +77,18 @@
         let batteryData = {}; 
         const LOCAL_STORAGE_KEY = 'batteryFleetData';
         
-        // --- Smart Charging Constants ---
-        const SYMA_CHARGE_RATIO = 13.0;  // 13 minutes of charge per 1 minute of flight
-        const DJI_CHARGE_RATIO = 2.0;    // 2 minutes of charge per 1 minute of flight
+        const SYMA_CHARGE_RATIO = 13.0;
+        const DJI_CHARGE_RATIO = 2.0;
         const DEFAULT_CHARGE_RATIO = 1.0;
-        const MIN_CHARGE_TIME_MS = 15000; // Minimum 15 seconds
-        const MAX_CHARGE_TIME_MS = 600000; // Maximum 10 minutes (for demo purposes)
-
+        const MIN_CHARGE_TIME_MS = 15000;
+        const MAX_CHARGE_TIME_MS = 600000;
         let uiUpdateInterval = null;
 
         const ctecIdInput = document.getElementById('ctecIdInput');
         const batteryIdInput = document.getElementById('batteryIdInput');
         const actionMessage = document.getElementById('action-message');
         const batteryListDiv = document.getElementById('battery-list');
+        const faultBtn = document.getElementById('fault-btn');
         
         function loadDataFromLocalStorage() {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -118,6 +122,25 @@
             document.getElementById('checkout-btn').disabled = !ctecId || !batteryId;
             document.getElementById('checkin-btn').disabled = !batteryId;
             document.getElementById('add-new-btn').disabled = !document.getElementById('newBatteryId').value || !document.getElementById('newBatteryCategory').value;
+            
+            const battery = batteryData[batteryId];
+            if (battery) {
+                faultBtn.disabled = false;
+                if (battery.status === 'faulty') {
+                    faultBtn.textContent = 'Clear Fault (Set to Available)';
+                    faultBtn.classList.replace('bg-gray-600', 'bg-red-600');
+                    faultBtn.classList.replace('hover:bg-gray-700', 'hover:bg-red-700');
+                } else {
+                    faultBtn.textContent = 'Mark as Faulty';
+                    faultBtn.classList.replace('bg-red-600', 'bg-gray-600');
+                    faultBtn.classList.replace('hover:bg-red-700', 'hover:bg-gray-700');
+                }
+            } else {
+                faultBtn.disabled = true;
+                faultBtn.textContent = 'Mark as Faulty';
+                faultBtn.classList.replace('bg-red-600', 'bg-gray-600');
+                faultBtn.classList.replace('hover:bg-red-700', 'hover:bg-gray-700');
+            }
         }
         
         ctecIdInput.addEventListener('input', updateButtonStates);
@@ -135,7 +158,7 @@
 
             if (type === 'checkout') {
                 if (!ctecId) return showMessage('Person ID is required for checkout.', true);
-                if (currentBattery.status !== 'available') return showMessage(`Battery '${batteryId}' is not available.`, true);
+                if (currentBattery.status !== 'available') return showMessage(`Battery '${batteryId}' is not available (Status: ${currentBattery.status}).`, true);
 
                 currentBattery.status = 'checked-out';
                 currentBattery.checkedOutTo = ctecId;
@@ -146,14 +169,10 @@
                 if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
                 
                 const usageMs = Date.now() - new Date(currentBattery.checkoutTime).getTime();
-                
                 let chargeRatio = DEFAULT_CHARGE_RATIO;
                 const categoryLower = currentBattery.category.toLowerCase();
-                if (categoryLower.includes('dji')) {
-                    chargeRatio = DJI_CHARGE_RATIO;
-                } else if (categoryLower.includes('syma')) {
-                    chargeRatio = SYMA_CHARGE_RATIO;
-                }
+                if (categoryLower.includes('dji')) { chargeRatio = DJI_CHARGE_RATIO; } 
+                else if (categoryLower.includes('syma')) { chargeRatio = SYMA_CHARGE_RATIO; }
 
                 let chargeTimeMs = usageMs * chargeRatio;
                 chargeTimeMs = Math.max(MIN_CHARGE_TIME_MS, Math.min(chargeTimeMs, MAX_CHARGE_TIME_MS));
@@ -182,8 +201,39 @@
                  batteryIdInput.value = '';
                  return;
             }
-            const action = batteryData[batteryId].status === 'checked-out' ? 'checkin' : 'checkout';
+            
+            const currentStatus = batteryData[batteryId].status;
+            if (currentStatus === 'faulty') {
+                showMessage(`Battery '${batteryId}' is faulty. Clear fault to use.`, true);
+                return;
+            }
+            
+            const action = currentStatus === 'checked-out' ? 'checkin' : 'checkout';
             handleTransaction(action);
+        }
+
+        function toggleFaultStatus() {
+            const batteryId = batteryIdInput.value.trim().toUpperCase();
+            if (!batteryId || !batteryData[batteryId]) return showMessage('Battery not found.', true);
+            
+            const battery = batteryData[batteryId];
+            if (battery.status === 'faulty') {
+                battery.status = 'available';
+                showMessage(`Fault cleared for '${batteryId}'. Battery is now available.`);
+            } else {
+                battery.status = 'faulty';
+                battery.checkedOutTo = null;
+                battery.checkoutTime = null;
+                battery.chargeStartTime = null;
+                battery.chargeDurationMs = null;
+                showMessage(`Battery '${batteryId}' marked as FAULTY. Cannot be used.`);
+            }
+            
+            battery.lastTransactionTime = new Date().toISOString();
+            saveDataToLocalStorage();
+            ctecIdInput.value = '';
+            batteryIdInput.value = '';
+            updateButtonStates();
         }
 
         function startChargingTimer(batteryId, durationMs) {
@@ -245,11 +295,13 @@
                 "BATT-SYMA-01": { category: "Syma X5C Drone", status: "available", checkoutCount: 0 },
                 "BATT-DJI-01": { category: "DJI Mini 3", status: "available", checkoutCount: 5 },
                 "BATT-GOPRO-01": { category: "GoPro Hero 9", status: "available", checkoutCount: 12 },
+                "BATT-FAULTY-01": { category: "DJI Mini 3", status: "faulty", checkoutCount: 20 },
             };
             let count = 0;
             for (const id in seedData) {
                 if (!batteryData[id]) {
-                    batteryData[id] = { ...seedData[id], lastTransactionTime: new Date().toISOString() };
+                    const fullData = { ...{ lastTransactionTime: new Date().toISOString(), checkoutTime: null, chargeStartTime: null, chargeDurationMs: null }, ...seedData[id] };
+                    batteryData[id] = fullData;
                     count++;
                 }
             }
@@ -258,7 +310,7 @@
         }
         
         function resetSystem() {
-            if (confirm("Are you sure...")) {
+            if (confirm("Are you sure you want to delete ALL battery data?\n\nThis action cannot be undone.")) {
                 batteryData = {};
                 saveDataToLocalStorage();
                 showMessage("System has been reset successfully.");
@@ -292,6 +344,7 @@
                 switch(battery.status) {
                     case 'available': statusClass = 'status-available'; statusText = 'Available'; break;
                     case 'checked-out': statusClass = 'status-checked-out'; statusText = `Checked Out: ${battery.checkedOutTo}`; break;
+                    case 'faulty': statusClass = 'status-faulty'; statusText = 'Faulty'; break;
                     case 'charging':
                         statusClass = 'status-charging';
                         if (battery.chargeStartTime && battery.chargeDurationMs) {
@@ -325,7 +378,7 @@
             loadDataFromLocalStorage();
             updateButtonStates();
             ctecIdInput.focus();
-            mainContainer.addEventListener('click', (event) => {
+            document.getElementById('main-container').addEventListener('click', (event) => {
                 const interactiveElements = ['INPUT', 'BUTTON'];
                 if (!interactiveElements.includes(event.target.tagName)) {
                     if (ctecIdInput.value === '') { ctecIdInput.focus(); } 
