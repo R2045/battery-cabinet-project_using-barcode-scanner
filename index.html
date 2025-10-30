@@ -11,7 +11,7 @@
         .status-available { background-color: #d1fae5; color: #065f46; }
         .status-checked-out { background-color: #fee2e2; color: #991b1b; }
         .status-charging { background-color: #fef9c3; color: #854d0e; }
-        .status-faulty { background-color: #4b5563; color: #ffffff; } /* New Faulty Status */
+        .status-faulty { background-color: #4b5563; color: #ffffff; }
     </style>
 </head>
 <body class="min-h-screen p-4 sm:p-8">
@@ -66,7 +66,7 @@
         <!-- Battery Fleet Status Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
-                <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c1.657 0 3 .895 3 2s-1.343 2-3 2v2m0-4c-1.657 0-3 .895-3 2s1.343 2 3 2m-3 3h6M3 6h18M3 10h18M3 14h18M3 18h18"></path></svg>
+                <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c1.657 0 3 .895 3 2s-1.343 2-3 2v2m0-4c1.657 0-3 .895-3 2s1.343 2 3 2m-3 3h6M3 6h18M3 10h18M3 14h18M3 18h18"></path></svg>
                 Battery Fleet Status
             </h2>
             <div id="battery-list" class="space-y-3"><p class="text-gray-500">Loading battery data...</p></div>
@@ -89,6 +89,21 @@
         const actionMessage = document.getElementById('action-message');
         const batteryListDiv = document.getElementById('battery-list');
         const faultBtn = document.getElementById('fault-btn');
+        
+        // --- NEW LED CONTROL FUNCTION ---
+        function updateLedStatus(status) {
+            const serverUrl = 'http://localhost:5000/set_led';
+            fetch(serverUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: status })
+            })
+            .catch(error => {
+                console.error('LED Server Connection Error:', error);
+                // We don't show a user-facing error, just log it.
+                // The app continues to work even if the LED server is down.
+            });
+        }
         
         function loadDataFromLocalStorage() {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -165,6 +180,7 @@
                 currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
                 currentBattery.checkoutTime = new Date().toISOString();
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
+                updateLedStatus('checked-out'); // LED CALL
             } else if (type === 'checkin') {
                 if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
                 
@@ -184,6 +200,7 @@
                 currentBattery.chargeDurationMs = chargeTimeMs;
                 startChargingTimer(batteryId, chargeTimeMs);
                 showMessage(`Battery '${batteryId}' charging for ${Math.round(chargeTimeMs / 1000)}s.`);
+                updateLedStatus('charging'); // LED CALL
             }
             
             currentBattery.lastTransactionTime = new Date().toISOString();
@@ -220,6 +237,7 @@
             if (battery.status === 'faulty') {
                 battery.status = 'available';
                 showMessage(`Fault cleared for '${batteryId}'. Battery is now available.`);
+                updateLedStatus('available'); // LED CALL
             } else {
                 battery.status = 'faulty';
                 battery.checkedOutTo = null;
@@ -227,6 +245,7 @@
                 battery.chargeStartTime = null;
                 battery.chargeDurationMs = null;
                 showMessage(`Battery '${batteryId}' marked as FAULTY. Cannot be used.`);
+                updateLedStatus('faulty'); // LED CALL
             }
             
             battery.lastTransactionTime = new Date().toISOString();
@@ -245,6 +264,7 @@
                     battery.chargeStartTime = null;
                     battery.chargeDurationMs = null;
                     saveDataToLocalStorage();
+                    updateLedStatus('available'); // LED CALL
                 }
             }, durationMs);
         }
@@ -262,6 +282,7 @@
                 battery.chargeStartTime = null;
                 battery.chargeDurationMs = null;
                 saveDataToLocalStorage();
+                updateLedStatus('available'); // LED CALL
             } else {
                 const remainingTime = totalDuration - elapsedTime;
                 startChargingTimer(batteryId, remainingTime);
@@ -314,6 +335,7 @@
                 batteryData = {};
                 saveDataToLocalStorage();
                 showMessage("System has been reset successfully.");
+                updateLedStatus('off'); // LED CALL
             }
         }
 
@@ -385,6 +407,7 @@
                     else { batteryIdInput.focus(); }
                 }
             });
+            updateLedStatus('available'); // Set Green LED on load
         }
         
         main();
