@@ -21,7 +21,6 @@
             <p id="system-status" class="text-lg text-gray-600">System Ready. Use USB Barcode Scanner.</p>
         </header>
 
-        <!-- Main Transaction Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
@@ -45,7 +44,6 @@
             <button onclick="toggleFaultStatus()" id="fault-btn" class="w-full mt-4 px-6 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700 transition" disabled>Mark as Faulty</button>
         </div>
 
-        <!-- New Battery Registration Card -->
         <div class="card mb-8">
              <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -62,7 +60,6 @@
             </div>
         </div>
 
-        <!-- Battery Fleet Status Card -->
         <div class="card mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center">
                 <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c1.657 0 3 .895 3 2s-1.343 2-3 2v2m0-4c1.657 0-3 .895-3 2s1.343 2 3 2m-3 3h6M3 6h18M3 10h18M3 14h18M3 18h18"></path></svg>
@@ -74,7 +71,6 @@
 
     <script>
         let batteryData = {}; 
-        let currentLedStatus = ''; // Track the last sent LED status
         const LOCAL_STORAGE_KEY = 'batteryFleetData';
         
         const SYMA_CHARGE_RATIO = 13.0;
@@ -82,6 +78,7 @@
         const DEFAULT_CHARGE_RATIO = 1.0;
         const MIN_CHARGE_TIME_MS = 15000;
         const MAX_CHARGE_TIME_MS = 600000;
+        const OVERRIDE_DURATION_MS = 10000; // 10 seconds
         let uiUpdateInterval = null;
 
         const ctecIdInput = document.getElementById('ctecIdInput');
@@ -89,52 +86,62 @@
         const actionMessage = document.getElementById('action-message');
         const batteryListDiv = document.getElementById('battery-list');
         const faultBtn = document.getElementById('fault-btn');
+        const serverUrl = 'http://localhost:5000/set_led';
         
-        // --- NEW GLOBAL LED LOGIC ---
+        // --- NEW LED CONTROL FUNCTIONS ---
 
-        // This function just sends the command to the Python server.
-        function sendLedCommand(status) {
-            if (status === currentLedStatus) return; // Don't resend the same command
-            
-            const serverUrl = 'http://localhost:5000/set_led';
+        /**
+         * Sends an "override" command for a solid light.
+         * Reverts to summary mode after 10 seconds.
+         */
+        function handleLedUpdate(overrideStatus) {
+            // 1. Send the override command immediately
             fetch(serverUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: status })
+                body: JSON.stringify({ status: overrideStatus + "-override" }) // e.g., "faulty-override"
             })
-            .then(() => {
-                currentLedStatus = status; // Update the current state
-            })
-            .catch(error => {
-                console.error('LED Server Connection Error:', error);
-            });
+            .catch(error => console.error('LED Server Connection Error:', error));
+            
+            // 2. Set a timer to revert to the summary status
+            setTimeout(() => {
+                updateFleetLedSummary();
+            }, OVERRIDE_DURATION_MS);
         }
-        
-        // This new function calculates the global priority status.
-        function updateGlobalLedStatus() {
-            let hasFaulty = false;
+
+        /**
+         * Calculates the fleet-wide summary and sends it to the server.
+         * Priority: Faulty > Charging > Available > Off
+         */
+        function updateFleetLedSummary() {
+            let summaryStatus = 'off';
+            let hasAvailable = false;
             let hasCharging = false;
-            
-            for (const battery of Object.values(batteryData)) {
-                if (battery.status === 'faulty') {
-                    hasFaulty = true;
-                    break; // Red alert is top priority, no need to check further.
-                }
-                if (battery.status === 'charging') {
-                    hasCharging = true;
-                }
+            let hasFaulty = false;
+
+            for (const id in batteryData) {
+                const battery = batteryData[id];
+                if (battery.status === 'faulty') { hasFaulty = true; }
+                else if (battery.status === 'charging') { hasCharging = true; }
+                else if (battery.status === 'available') { hasAvailable = true; }
             }
+
+            // Set status based on priority
+            if (hasFaulty) { summaryStatus = 'faulty-blink'; }
+            else if (hasCharging) { summaryStatus = 'charging-blink'; }
+            else if (hasAvailable) { summaryStatus = 'available'; } // Solid green for "ready"
+            else { summaryStatus = 'off'; }
             
-            if (hasFaulty) {
-                sendLedCommand('faulty');
-            } else if (hasCharging) {
-                sendLedCommand('charging');
-            } else {
-                sendLedCommand('available');
-            }
+            // Send the summary command
+            fetch(serverUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: summaryStatus })
+            })
+            .catch(error => console.error('LED Server Connection Error:', error));
         }
         
-        // --- END OF NEW LED LOGIC ---
+        // --- CORE FUNCTIONS ---
         
         function loadDataFromLocalStorage() {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -145,13 +152,14 @@
                 }
             });
             renderBatteries();
-            updateGlobalLedStatus(); // Set initial LED status on load
+            updateFleetLedSummary(); // Set initial summary LED status on load
         }
 
         function saveDataToLocalStorage() {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(batteryData));
             renderBatteries();
-            updateGlobalLedStatus(); // Update LEDs on every single data change
+            // Do NOT call summary here, it might override a temporary action.
+            // Let the functions that call saveData decide when to update the summary.
         }
         
         function showMessage(message, isError = false) {
@@ -213,6 +221,7 @@
                 currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
                 currentBattery.checkoutTime = new Date().toISOString();
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
+                handleLedUpdate('checked-out'); // LED CALL (Override)
             } else if (type === 'checkin') {
                 if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
                 
@@ -232,10 +241,12 @@
                 currentBattery.chargeDurationMs = chargeTimeMs;
                 startChargingTimer(batteryId, chargeTimeMs);
                 showMessage(`Battery '${batteryId}' charging for ${Math.round(chargeTimeMs / 1000)}s.`);
+                handleLedUpdate('charging'); // LED CALL (Override)
             }
             
             currentBattery.lastTransactionTime = new Date().toISOString();
-            saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
+            saveDataToLocalStorage();
+            updateFleetLedSummary(); // Update summary after transaction
             ctecIdInput.value = '';
             batteryIdInput.value = '';
             updateButtonStates();
@@ -253,6 +264,7 @@
             const currentStatus = batteryData[batteryId].status;
             if (currentStatus === 'faulty') {
                 showMessage(`Battery '${batteryId}' is faulty. Clear fault to use.`, true);
+                handleLedUpdate('faulty'); // Show solid red
                 return;
             }
             
@@ -268,6 +280,7 @@
             if (battery.status === 'faulty') {
                 battery.status = 'available';
                 showMessage(`Fault cleared for '${batteryId}'. Battery is now available.`);
+                handleLedUpdate('available'); // LED CALL (Override)
             } else {
                 battery.status = 'faulty';
                 battery.checkedOutTo = null;
@@ -275,10 +288,12 @@
                 battery.chargeStartTime = null;
                 battery.chargeDurationMs = null;
                 showMessage(`Battery '${batteryId}' marked as FAULTY. Cannot be used.`);
+                handleLedUpdate('faulty'); // LED CALL (Override)
             }
             
             battery.lastTransactionTime = new Date().toISOString();
-            saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
+            saveDataToLocalStorage();
+            updateFleetLedSummary(); // Update summary after change
             ctecIdInput.value = '';
             batteryIdInput.value = '';
             updateButtonStates();
@@ -292,7 +307,8 @@
                     battery.status = 'available';
                     battery.chargeStartTime = null;
                     battery.chargeDurationMs = null;
-                    saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
+                    saveDataToLocalStorage();
+                    updateFleetLedSummary(); // Update summary, charge is done
                 }
             }, durationMs);
         }
@@ -309,7 +325,8 @@
                 battery.status = 'available';
                 battery.chargeStartTime = null;
                 battery.chargeDurationMs = null;
-                saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
+                saveDataToLocalStorage();
+                updateFleetLedSummary(); // Update summary, charge is done
             } else {
                 const remainingTime = totalDuration - elapsedTime;
                 startChargingTimer(batteryId, remainingTime);
@@ -325,7 +342,8 @@
                 lastTransactionTime: new Date().toISOString(), checkoutCount: 0,
                 checkoutTime: null, chargeStartTime: null, chargeDurationMs: null
             };
-            saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
+            saveDataToLocalStorage();
+            updateFleetLedSummary(); // Update summary, new battery added
             showMessage(`Successfully registered new battery: '${newId}'.`);
             document.getElementById('newBatteryId').value = '';
             document.getElementById('newBatteryCategory').value = '';
@@ -354,8 +372,9 @@
                 }
             }
             if (count > 0) { 
-                saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
-                showMessage(`Added ${count} sample batteries.`);
+                saveDataToLocalStorage();
+                updateFleetLedSummary(); // Update summary
+                showMessage(`Added ${count} sample batteries.`); 
             }
             else { showMessage("Sample data already exists.", false); }
         }
@@ -363,9 +382,10 @@
         function resetSystem() {
             if (confirm("Are you sure you want to delete ALL battery data?\n\nThis action cannot be undone.")) {
                 batteryData = {};
-                saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
+                saveDataToLocalStorage();
+                updateFleetLedSummary(); // Update summary
                 showMessage("System has been reset successfully.");
-                sendLedCommand('off'); // Explicitly turn off LEDs
+                handleLedUpdate('off'); // LED CALL (Override)
             }
         }
 
@@ -427,7 +447,7 @@
         }
 
         function main() {
-            loadDataFromLocalStorage(); // This now calls renderBatteries and updateGlobalLedStatus
+            loadDataFromLocalStorage();
             updateButtonStates();
             ctecIdInput.focus();
             document.getElementById('main-container').addEventListener('click', (event) => {
@@ -437,6 +457,7 @@
                     else { batteryIdInput.focus(); }
                 }
             });
+            // updateFleetLedSummary() is already called in loadData...()
         }
         
         main();
