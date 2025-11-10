@@ -42,7 +42,6 @@
                 <button onclick="handleTransaction('checkin')" id="checkin-btn" class="flex-1 px-6 py-4 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition" disabled>Check In / Charge</button>
             </div>
             
-            <!-- New Fault Button -->
             <button onclick="toggleFaultStatus()" id="fault-btn" class="w-full mt-4 px-6 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700 transition" disabled>Mark as Faulty</button>
         </div>
 
@@ -75,6 +74,7 @@
 
     <script>
         let batteryData = {}; 
+        let currentLedStatus = ''; // Track the last sent LED status
         const LOCAL_STORAGE_KEY = 'batteryFleetData';
         
         const SYMA_CHARGE_RATIO = 13.0;
@@ -90,20 +90,51 @@
         const batteryListDiv = document.getElementById('battery-list');
         const faultBtn = document.getElementById('fault-btn');
         
-        // --- NEW LED CONTROL FUNCTION ---
-        function updateLedStatus(status) {
+        // --- NEW GLOBAL LED LOGIC ---
+
+        // This function just sends the command to the Python server.
+        function sendLedCommand(status) {
+            if (status === currentLedStatus) return; // Don't resend the same command
+            
             const serverUrl = 'http://localhost:5000/set_led';
             fetch(serverUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: status })
             })
+            .then(() => {
+                currentLedStatus = status; // Update the current state
+            })
             .catch(error => {
                 console.error('LED Server Connection Error:', error);
-                // We don't show a user-facing error, just log it.
-                // The app continues to work even if the LED server is down.
             });
         }
+        
+        // This new function calculates the global priority status.
+        function updateGlobalLedStatus() {
+            let hasFaulty = false;
+            let hasCharging = false;
+            
+            for (const battery of Object.values(batteryData)) {
+                if (battery.status === 'faulty') {
+                    hasFaulty = true;
+                    break; // Red alert is top priority, no need to check further.
+                }
+                if (battery.status === 'charging') {
+                    hasCharging = true;
+                }
+            }
+            
+            if (hasFaulty) {
+                sendLedCommand('faulty');
+            } else if (hasCharging) {
+                sendLedCommand('charging');
+            } else {
+                sendLedCommand('available');
+            }
+        }
+        
+        // --- END OF NEW LED LOGIC ---
         
         function loadDataFromLocalStorage() {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -114,11 +145,13 @@
                 }
             });
             renderBatteries();
+            updateGlobalLedStatus(); // Set initial LED status on load
         }
 
         function saveDataToLocalStorage() {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(batteryData));
             renderBatteries();
+            updateGlobalLedStatus(); // Update LEDs on every single data change
         }
         
         function showMessage(message, isError = false) {
@@ -180,7 +213,6 @@
                 currentBattery.checkoutCount = (currentBattery.checkoutCount || 0) + 1;
                 currentBattery.checkoutTime = new Date().toISOString();
                 showMessage(`Successfully checked out '${batteryId}' to '${ctecId}'.`);
-                updateLedStatus('checked-out'); // LED CALL
             } else if (type === 'checkin') {
                 if (currentBattery.status !== 'checked-out') return showMessage(`Battery '${batteryId}' cannot be checked in.`, true);
                 
@@ -200,11 +232,10 @@
                 currentBattery.chargeDurationMs = chargeTimeMs;
                 startChargingTimer(batteryId, chargeTimeMs);
                 showMessage(`Battery '${batteryId}' charging for ${Math.round(chargeTimeMs / 1000)}s.`);
-                updateLedStatus('charging'); // LED CALL
             }
             
             currentBattery.lastTransactionTime = new Date().toISOString();
-            saveDataToLocalStorage();
+            saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
             ctecIdInput.value = '';
             batteryIdInput.value = '';
             updateButtonStates();
@@ -237,7 +268,6 @@
             if (battery.status === 'faulty') {
                 battery.status = 'available';
                 showMessage(`Fault cleared for '${batteryId}'. Battery is now available.`);
-                updateLedStatus('available'); // LED CALL
             } else {
                 battery.status = 'faulty';
                 battery.checkedOutTo = null;
@@ -245,11 +275,10 @@
                 battery.chargeStartTime = null;
                 battery.chargeDurationMs = null;
                 showMessage(`Battery '${batteryId}' marked as FAULTY. Cannot be used.`);
-                updateLedStatus('faulty'); // LED CALL
             }
             
             battery.lastTransactionTime = new Date().toISOString();
-            saveDataToLocalStorage();
+            saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
             ctecIdInput.value = '';
             batteryIdInput.value = '';
             updateButtonStates();
@@ -263,8 +292,7 @@
                     battery.status = 'available';
                     battery.chargeStartTime = null;
                     battery.chargeDurationMs = null;
-                    saveDataToLocalStorage();
-                    updateLedStatus('available'); // LED CALL
+                    saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
                 }
             }, durationMs);
         }
@@ -281,8 +309,7 @@
                 battery.status = 'available';
                 battery.chargeStartTime = null;
                 battery.chargeDurationMs = null;
-                saveDataToLocalStorage();
-                updateLedStatus('available'); // LED CALL
+                saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
             } else {
                 const remainingTime = totalDuration - elapsedTime;
                 startChargingTimer(batteryId, remainingTime);
@@ -298,7 +325,7 @@
                 lastTransactionTime: new Date().toISOString(), checkoutCount: 0,
                 checkoutTime: null, chargeStartTime: null, chargeDurationMs: null
             };
-            saveDataToLocalStorage();
+            saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
             showMessage(`Successfully registered new battery: '${newId}'.`);
             document.getElementById('newBatteryId').value = '';
             document.getElementById('newBatteryCategory').value = '';
@@ -326,16 +353,19 @@
                     count++;
                 }
             }
-            if (count > 0) { saveDataToLocalStorage(); showMessage(`Added ${count} sample batteries.`); }
+            if (count > 0) { 
+                saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
+                showMessage(`Added ${count} sample batteries.`);
+            }
             else { showMessage("Sample data already exists.", false); }
         }
         
         function resetSystem() {
             if (confirm("Are you sure you want to delete ALL battery data?\n\nThis action cannot be undone.")) {
                 batteryData = {};
-                saveDataToLocalStorage();
+                saveDataToLocalStorage(); // This will call render and updateGlobalLedStatus
                 showMessage("System has been reset successfully.");
-                updateLedStatus('off'); // LED CALL
+                sendLedCommand('off'); // Explicitly turn off LEDs
             }
         }
 
@@ -397,7 +427,7 @@
         }
 
         function main() {
-            loadDataFromLocalStorage();
+            loadDataFromLocalStorage(); // This now calls renderBatteries and updateGlobalLedStatus
             updateButtonStates();
             ctecIdInput.focus();
             document.getElementById('main-container').addEventListener('click', (event) => {
@@ -407,7 +437,6 @@
                     else { batteryIdInput.focus(); }
                 }
             });
-            updateLedStatus('available'); // Set Green LED on load
         }
         
         main();
