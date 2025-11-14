@@ -90,29 +90,19 @@
         
         // --- NEW LED CONTROL FUNCTIONS ---
 
-        /**
-         * Sends an "override" command for a solid light.
-         * Reverts to summary mode after 10 seconds.
-         */
         function handleLedUpdate(overrideStatus) {
-            // 1. Send the override command immediately
             fetch(serverUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: overrideStatus + "-override" }) // e.g., "faulty-override"
+                body: JSON.stringify({ status: overrideStatus + "-override" })
             })
             .catch(error => console.error('LED Server Connection Error:', error));
             
-            // 2. Set a timer to revert to the summary status
             setTimeout(() => {
                 updateFleetLedSummary();
             }, OVERRIDE_DURATION_MS);
         }
 
-        /**
-         * Calculates the fleet-wide summary and sends it to the server.
-         * Priority: Faulty > Charging > Available > Off
-         */
         function updateFleetLedSummary() {
             let summaryStatus = 'off';
             let hasAvailable = false;
@@ -126,13 +116,11 @@
                 else if (battery.status === 'available') { hasAvailable = true; }
             }
 
-            // Set status based on priority
             if (hasFaulty) { summaryStatus = 'faulty-blink'; }
             else if (hasCharging) { summaryStatus = 'charging-blink'; }
-            else if (hasAvailable) { summaryStatus = 'available'; } // Solid green for "ready"
+            else if (hasAvailable) { summaryStatus = 'available'; }
             else { summaryStatus = 'off'; }
             
-            // Send the summary command
             fetch(serverUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -152,14 +140,12 @@
                 }
             });
             renderBatteries();
-            updateFleetLedSummary(); // Set initial summary LED status on load
+            updateFleetLedSummary();
         }
 
         function saveDataToLocalStorage() {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(batteryData));
             renderBatteries();
-            // Do NOT call summary here, it might override a temporary action.
-            // Let the functions that call saveData decide when to update the summary.
         }
         
         function showMessage(message, isError = false) {
@@ -246,7 +232,7 @@
             
             currentBattery.lastTransactionTime = new Date().toISOString();
             saveDataToLocalStorage();
-            updateFleetLedSummary(); // Update summary after transaction
+            // ** BUG FIX: Removed updateFleetLedSummary() from here **
             ctecIdInput.value = '';
             batteryIdInput.value = '';
             updateButtonStates();
@@ -457,7 +443,6 @@
                     else { batteryIdInput.focus(); }
                 }
             });
-            // updateFleetLedSummary() is already called in loadData...()
         }
         
         main();
